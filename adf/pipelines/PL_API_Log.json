@@ -1,0 +1,253 @@
+{
+    "name": "PL_API_Log",
+    "properties": {
+        "description": "Reads records, POSTs each to an API while capturing the exact request body, and writes a consolidated log of all sent requests to a single JSON file.",
+        "activities": [
+            {
+                "name": "Web_Get_Token",
+                "description": "Simulates fetching a bearer token. In this lab, it calls httpbin.org, which echoes the request. We pretend a field in the echo response is our token.",
+                "type": "WebActivity",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "method": "POST",
+                    "url": "https://httpbin.org/post",
+                    "body": {
+                        "value": "@json('{\"token\": \"fake-bearer-token-for-lab\"}')",
+                        "type": "Expression"
+                    }
+                }
+            },
+            {
+                "name": "SetBearerToken",
+                "description": "Stores the fake bearer token from the httpbin.org response into a pipeline variable.",
+                "type": "SetVariable",
+                "dependsOn": [
+                    {
+                        "activity": "Web_Get_Token",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "variableName": "BearerToken",
+                    "value": {
+                        "value": "@activity('Web_Get_Token').output.json.token",
+                        "type": "Expression"
+                    }
+                }
+            },
+            {
+                "name": "Lookup_Input_File",
+                "description": "Reads all records from the source JSON or JSONL file.",
+                "type": "Lookup",
+                "dependsOn": [
+                    {
+                        "activity": "SetBearerToken",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "JsonSource",
+                        "storeSettings": {
+                            "type": "AzureBlobFSReadSettings",
+                            "recursive": true
+                        }
+                    },
+                    "dataset": {
+                        "referenceName": "InputDataset",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "fileName": "@pipeline().parameters.inputFileName"
+                        }
+                    },
+                    "firstRowOnly": false
+                }
+            },
+            {
+                "name": "ForEach_Request",
+                "description": "For each record, POST it to the API and append the exact request body to a variable for later logging.",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "Lookup_Input_File",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('Lookup_Input_File').output.value",
+                        "type": "Expression"
+                    },
+                    "isSequential": true,
+                    "activities": [
+                        {
+                            "name": "Call_API",
+                            "type": "WebActivity",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "0.12:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "method": "POST",
+                                "headers": {
+                                    "Content-Type": "application/json",
+                                    "Authorization": {
+                                        "value": "Bearer @{variables('BearerToken')}",
+                                        "type": "Expression"
+                                    }
+                                },
+                                "url": "@pipeline().parameters.apiUrl",
+                                "body": {
+                                    "value": "@string(item())",
+                                    "type": "Expression"
+                                }
+                            }
+                        },
+                        {
+                            "name": "Append_Request_To_Log_Variable",
+                            "type": "AppendVariable",
+                            "dependsOn": [
+                                {
+                                    "activity": "Call_API",
+                                    "dependencyConditions": [
+                                        "Completed"
+                                    ]
+                                }
+                            ],
+                            "userProperties": [],
+                            "typeProperties": {
+                                "variableName": "ApiRequestLog",
+                                "value": {
+                                    "value": "@string(item())",
+                                    "type": "Expression"
+                                }
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "Write_Request_Log_File",
+                "description": "Uses a Copy activity to write the in-memory log of all API requests to a single JSON file in the audit container.",
+                "type": "Copy",
+                "dependsOn": [
+                    {
+                        "activity": "ForEach_Request",
+                        "dependencyConditions": [
+                            "Completed"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "JsonSource",
+                        "additionalColumns": [
+                            {
+                                "name": "runId",
+                                "value": {
+                                    "value": "@pipeline().RunId",
+                                    "type": "Expression"
+                                }
+                            },
+                            {
+                                "name": "timestampUtc",
+                                "value": {
+                                    "value": "@utcNow()",
+                                    "type": "Expression"
+                                }
+                            },
+                            {
+                                "name": "allSentRequests",
+                                "value": {
+                                    "value": "@json(concat('[', join(variables('ApiRequestLog'), ','), ']'))",
+                                    "type": "Expression"
+                                }
+                            }
+                        ]
+                    },
+                    "sink": {
+                        "type": "JsonSink",
+                        "storeSettings": {
+                            "type": "AzureBlobFSWriteSettings"
+                        },
+                        "formatSettings": {
+                            "type": "JsonWriteSettings",
+                            "filePattern": "setOfObjects"
+                        }
+                    },
+                    "enableStaging": false
+                },
+                "inputs": [
+                    {
+                        "referenceName": "DummySourceDataset",
+                        "type": "DatasetReference"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "referenceName": "OutputDataset",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "fileName": "@concat('request_log_', pipeline().RunId, '.json')"
+                        }
+                    }
+                ]
+            }
+        ],
+        "variables": {
+            "BearerToken": {
+                "type": "String"
+            },
+            "ApiRequestLog": {
+                "type": "Array",
+                "defaultValue": []
+            }
+        },
+        "parameters": {
+            "inputFileName": {
+                "type": "string",
+                "defaultValue": "people_array.json"
+            },
+            "apiUrl": {
+                "type": "string",
+                "defaultValue": "https://httpbin.org/post"
+            }
+        },
+        "annotations": []
+    }
+}

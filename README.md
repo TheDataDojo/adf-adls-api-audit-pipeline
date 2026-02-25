@@ -1,6 +1,6 @@
-# ADF ADLS API Audit Pipeline — Lab in a Box
+# ADF API Request Logging Pipeline — Lab in a Box
 
-An end-to-end Azure Data Factory lab that reads person records from ADLS Gen2, POSTs each record to a public API endpoint, and writes a consolidated JSONL audit file back to ADLS Gen2 — all deployed in one click.
+An end-to-end Azure Data Factory lab that reads records from ADLS Gen2, POSTs each record to a public API endpoint, captures the exact request payload for each call, and writes a consolidated JSON log of all sent requests back to ADLS Gen2 — all deployed in one click.
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FTheDataDojo%2Fadf-adls-api-audit-pipeline%2Fmaster%2Finfra%2Fmain.json)
 
@@ -12,10 +12,15 @@ An end-to-end Azure Data Factory lab that reads person records from ADLS Gen2, P
 
 ```mermaid
 graph LR
-    A[ADLS Gen2\ninputs container] -->|Lookup Activity| B[ADF Pipeline\nProcessPersonRecords]
-    B -->|ForEach record| C[Web Activity\nPOST to API]
-    C -->|On success| D[Web Activity\nAppend Blob\naudit.jsonl]
-    D --> E[ADLS Gen2\naudit container]
+    subgraph "ADF Pipeline: PL_API_Log"
+        direction LR
+        A[Lookup Input] --> B{ForEach Record}
+        B --> C[Call API]
+        C --> D[Append to Variable]
+        B --> E((Write Log File))
+    end
+    F[ADLS Gen2\ninputs] --> A
+    E --> G[ADLS Gen2\naudit]
 ```
 
 ---
@@ -24,8 +29,8 @@ graph LR
 
 | Resource | Purpose |
 |---|---|
-| Azure Data Factory | Hosts the `ProcessPersonRecords` pipeline |
-| Storage Account (ADLS Gen2) | `inputs` container for source files; `audit` container for audit output |
+| Azure Data Factory | Hosts the `PL_API_Log` pipeline |
+| Storage Account (ADLS Gen2) | `inputs` container for source files; `audit` container for the final request log |
 | System-Assigned Managed Identity | ADF identity granted **Storage Blob Data Contributor** on the storage account |
 
 ---
@@ -54,43 +59,57 @@ You can also use the helper script:
 
 ### 3. Run the pipeline
 
-Open **Azure Data Factory Studio** → **Author** → `ProcessPersonRecords` → **Debug**.
+Open **Azure Data Factory Studio** → **Author** → `PL_API_Log` → **Debug**.
 
 | Parameter | Description | Example |
 |---|---|---|
 | `inputFileName` | File name in the `inputs` container | `people_array.json` |
-| `inputFileFormat` | `json` for array, `jsonl` for JSON Lines | `json` |
 | `apiUrl` | Target API endpoint | `https://httpbin.org/post` |
 
-### 4. Verify API calls
+### 4. Verify the request log file
 
-The default endpoint is `https://httpbin.org/post`, which echoes the request body in its response. In the ADF **Monitor** view, click into the `PostToApi` activity output to see the echoed payload from httpbin.
+Navigate to the storage account → **Containers** → `audit` → `request_log_<pipelineRunId>.json`.
 
-### 5. Verify the audit file
-
-Navigate to the storage account → **Containers** → `audit` → `<pipelineRunId>/audit.jsonl`.
-
-Each line is a valid JSON object:
+The output is a single JSON object containing the `runId`, `timestampUtc`, and an array (`allSentRequests`) of the exact JSON payloads that were sent to the API:
 
 ```json
 {
-  "personId": "1",
-  "operation": "Unknown",
-  "httpStatusCode": 200,
-  "apiResponseSnippet": "{\"args\":{},\"data\":\"{\\\"personId\\\":\\\"1\\\",\\\"name\\\":\\\"John Doe\\\",\\\"age\\\":30}\",\"files\":{},\"form\":{},\"headers\":{\"Accept\":\"*/*\",\"Content-Length\":\"68\",\"Content-Type\":\"application/json\",\"Host\":\"httpbin.org\",\"X-Amzn-Trace-Id\":\"Root=1-664f6e3c-1234567890abcdef12345678\"},\"json\":{\"age\":30,\"name\":\"John Doe\",\"personId\":\"1\"},\"origin\":\"52.202.10.1\",\"url\":\"https://httpbin.org/post\"}",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "pipelineRunId": "abc123...",
-  "activityRunId": "def456..."
+  "runId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+  "timestampUtc": "2024-01-15T12:00:00.000Z",
+  "allSentRequests": [
+    {
+      "personId": "1",
+      "name": "John Doe",
+      "age": 30
+    },
+    {
+      "personId": "2",
+      "name": "Jane Smith",
+      "age": 25
+    },
+    {
+      "personId": "1",
+      "name": "John Doe",
+      "age": 31
+    },
+    {
+      "personId": "3",
+      "name": "Sam Jones",
+      "age": 45
+    },
+    {
+      "personId": "2",
+      "name": "Jane Smith"
+    }
+  ]
 }
 ```
 
-> **Note on `operation` field:** The `operation` field is now read from the API response body (`activity(\'PostToApi\').output.json.action`). If the field is missing from the response, it will be stamped as `Unknown` in the audit log. The default API (`httpbin.org`) does not return this field, so all operations will be logged as `Unknown`.
-
 ---
 
-## Audit Design Notes
+## Pipeline Design Notes
 
-The pipeline uses `isSequential: true` on the `ForEach` activity to enforce **sequential** append writes to the single audit blob per run. This prevents concurrent append corruption on the Append Blob. The tradeoff is throughput — records are processed one at a time. For high-volume scenarios, consider writing per-record audit files and merging downstream.
+This pipeline demonstrates a common pattern for capturing the exact data sent to an API for auditing or reconciliation purposes. It uses an `AppendVariable` activity inside a `ForEach` loop to collect the request bodies in memory, then a single `Copy` activity to write the entire collection to a file at the end. This is more efficient than writing a separate file for each request.
 
 ---
 
@@ -99,27 +118,22 @@ The pipeline uses `isSequential: true` on the `ForEach` activity to enforce **se
 ```
 .
 ├── adf/
-│   ├── factory.json                  # ARM template for all ADF artifacts (linked services, datasets, pipeline)
+│   ├── datasets/
+│   │   ├── DummySourceDataset.json
+│   │   ├── InputDataset.json
+│   │   └── OutputDataset.json
+│   ├── factory.json
+│   ├── linkedServices/
+│   │   └── AzureDataLakeStorage.json
 │   └── pipelines/
-│       └── ProcessPersonRecords.json # Standalone pipeline definition for reference
+│       └── PL_API_Log.json
 ├── infra/
-│   ├── main.bicep                    # Bicep source — Storage + ADF + RBAC + nested ADF artifact deployment
-│   ├── main.json                     # Compiled ARM template — used by the Deploy to Azure button
-│   └── main.parameters.json         # Default parameter values
+│   ├── main.bicep
+│   ├── main.json
+│   └── main.parameters.json
 ├── samples/
-│   ├── people_array.json             # Sample input: JSON array format
-│   └── people.jsonl                  # Sample input: JSON Lines format
+│   ├── people_array.json
+│   └── people.jsonl
 └── scripts/
-    └── upload-samples.sh             # Helper: uploads sample files to the inputs container
+    └── upload-samples.sh
 ```
-
----
-
-## Troubleshooting
-
-| Symptom | Likely Cause | Fix |
-|---|---|---|
-| `BadRequest` or null body on `PostToApi` | Body not serialized as string | Ensure `@string(item())` is used in the Web Activity body |
-| `AuthorizationPermissionMismatch` on audit write | ADF managed identity missing RBAC | Verify **Storage Blob Data Contributor** is assigned to the ADF identity on the storage account |
-| `BlobAccessTierNotSupported` or 404 on append | Wrong endpoint type | Use the **DFS** endpoint (`dfs.core.windows.net`), not the Blob endpoint, for ADLS Gen2 append operations |
-| Activity output reference error | Referencing output of a non-ancestor activity | In ADF, `activity(\'X\').output` is only valid inside the same `ForEach` scope where `X` ran |

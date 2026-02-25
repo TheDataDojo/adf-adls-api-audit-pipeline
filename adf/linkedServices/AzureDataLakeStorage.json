@@ -1,0 +1,19 @@
+{
+    "name": "AzureDataLakeStorage",
+    "properties": {
+        "annotations": [],
+        "type": "AzureBlobFS",
+        "typeProperties": {
+            "url": "@linkedService().storageUri",
+            "credential": {
+                "referenceName": "default",
+                "type": "ManagedIdentity"
+            }
+        },
+        "parameters": {
+            "storageUri": {
+                "type": "string"
+            }
+        }
+    }
+}

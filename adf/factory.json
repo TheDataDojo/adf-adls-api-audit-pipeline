@@ -9,7 +9,8 @@
             "type": "string"
         },
         "apiUrl": {
-            "type": "string"
+            "type": "string",
+            "defaultValue": "https://httpbin.org/post"
         }
     },
     "resources": [
@@ -37,15 +38,70 @@
                 "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'), '/linkedservices/AzureDataLakeStorage')]"
             ],
             "properties": {
+                "description": "Source dataset — reads student records from the 'inputs' container in ADLS Gen2.",
                 "linkedServiceName": {
                     "referenceName": "AzureDataLakeStorage",
                     "type": "LinkedServiceReference"
                 },
                 "parameters": {
-                    "containerName": {
+                    "fileName": {
                         "type": "string",
-                        "defaultValue": "inputs"
-                    },
+                        "defaultValue": "people_array.json"
+                    }
+                },
+                "annotations": [],
+                "type": "Json",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "fileSystem": "inputs"
+                    }
+                },
+                "schema": {}
+            }
+        },
+        {
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "name": "[concat(parameters('factoryName'), '/DummySourceDataset')]",
+            "apiVersion": "2018-06-01",
+            "dependsOn": [
+                "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'), '/linkedservices/AzureDataLakeStorage')]"
+            ],
+            "properties": {
+                "description": "Dummy source dataset required by the Copy activity. Points to the inputs container but is not actually read — the real data comes from the ApiRequestLog variable via additionalColumns.",
+                "linkedServiceName": {
+                    "referenceName": "AzureDataLakeStorage",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "Json",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileSystem": "inputs"
+                    }
+                },
+                "schema": {}
+            }
+        },
+        {
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "name": "[concat(parameters('factoryName'), '/OutputDataset')]",
+            "apiVersion": "2018-06-01",
+            "dependsOn": [
+                "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'), '/linkedservices/AzureDataLakeStorage')]"
+            ],
+            "properties": {
+                "description": "Sink dataset — writes the consolidated request log JSON file to the 'audit' container in ADLS Gen2.",
+                "linkedServiceName": {
+                    "referenceName": "AzureDataLakeStorage",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
                     "fileName": {
                         "type": "string"
                     }
@@ -59,10 +115,7 @@
                             "value": "@dataset().fileName",
                             "type": "Expression"
                         },
-                        "fileSystem": {
-                            "value": "@dataset().containerName",
-                            "type": "Expression"
-                        }
+                        "fileSystem": "audit"
                     }
                 },
                 "schema": {}
@@ -70,21 +123,77 @@
         },
         {
             "type": "Microsoft.DataFactory/factories/pipelines",
-            "name": "[concat(parameters('factoryName'), '/ProcessPersonRecords')]",
+            "name": "[concat(parameters('factoryName'), '/PL_API_Log')]",
             "apiVersion": "2018-06-01",
             "dependsOn": [
-                "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'), '/datasets/InputDataset')]"
+                "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'), '/datasets/InputDataset')]",
+                "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'), '/datasets/DummySourceDataset')]",
+                "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'), '/datasets/OutputDataset')]"
             ],
             "properties": {
-                "description": "Reads person records from ADLS Gen2, POSTs each record to a target API, and appends a JSONL audit line capturing the CRUD operation from the API response, HTTP status, and run correlation IDs.",
+                "description": "Reads student records from ADLS Gen2, POSTs each record to a target API, captures the exact request payload in memory, and writes a consolidated JSON log of all sent requests to the audit container.",
                 "activities": [
                     {
-                        "name": "LookupInputFile",
-                        "description": "Read all records from the input file into memory.",
-                        "type": "Lookup",
+                        "name": "Web_Get_Token",
+                        "description": "Simulates a bearer token fetch. In this lab, httpbin.org echoes the request body so we extract a fake token from the response.",
+                        "type": "WebActivity",
                         "dependsOn": [],
                         "policy": {
-                            "timeout": "7.00:00:00",
+                            "timeout": "0.12:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "method": "POST",
+                            "url": "https://httpbin.org/post",
+                            "headers": {
+                                "Content-Type": "application/json"
+                            },
+                            "body": {
+                                "value": "{\"token\": \"lab-bearer-token\"}",
+                                "type": "Expression"
+                            }
+                        }
+                    },
+                    {
+                        "name": "SetBearerToken",
+                        "description": "Stores the token returned by the auth endpoint into a pipeline variable.",
+                        "type": "SetVariable",
+                        "dependsOn": [
+                            {
+                                "activity": "Web_Get_Token",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "variableName": "BearerToken",
+                            "value": {
+                                "value": "@activity('Web_Get_Token').output.json.token",
+                                "type": "Expression"
+                            }
+                        }
+                    },
+                    {
+                        "name": "Lookup_Input_File",
+                        "description": "Reads all student records from the source file in the inputs container.",
+                        "type": "Lookup",
+                        "dependsOn": [
+                            {
+                                "activity": "SetBearerToken",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
                             "retry": 0,
                             "retryIntervalInSeconds": 30,
                             "secureOutput": false,
@@ -96,26 +205,26 @@
                                 "type": "JsonSource",
                                 "storeSettings": {
                                     "type": "AzureBlobFSReadSettings",
-                                    "recursive": false
+                                    "recursive": true
                                 }
                             },
                             "dataset": {
                                 "referenceName": "InputDataset",
                                 "type": "DatasetReference",
                                 "parameters": {
-                                    "fileName": "@pipeline().parameters.inputFileName"
+                                    "fileName": "[parameters('inputFileName')]"
                                 }
                             },
                             "firstRowOnly": false
                         }
                     },
                     {
-                        "name": "ForEachRecord",
-                        "description": "Process each person record sequentially. Sequential execution (isSequential=true) is required to prevent concurrent Append Blob write corruption on the single audit file.",
+                        "name": "ForEach_Request",
+                        "description": "Iterates over each student record. For each record: (1) POSTs it to the API with the bearer token; (2) appends the exact request body to the ApiRequestLog variable.",
                         "type": "ForEach",
                         "dependsOn": [
                             {
-                                "activity": "LookupInputFile",
+                                "activity": "Lookup_Input_File",
                                 "dependencyConditions": [
                                     "Succeeded"
                                 ]
@@ -124,32 +233,33 @@
                         "userProperties": [],
                         "typeProperties": {
                             "items": {
-                                "value": "@activity('LookupInputFile').output.value",
+                                "value": "@activity('Lookup_Input_File').output.value",
                                 "type": "Expression"
                             },
                             "isSequential": true,
                             "activities": [
                                 {
-                                    "name": "PostToApi",
-                                    "description": "POST the person record to the target API.",
+                                    "name": "Call_API",
                                     "type": "WebActivity",
                                     "dependsOn": [],
                                     "policy": {
-                                        "timeout": "0.00:10:00",
+                                        "timeout": "0.12:00:00",
                                         "retry": 0,
-                                        "retryIntervalInSeconds": 30,
-                                        "secureOutput": false,
-                                        "secureInput": false
+                                        "retryIntervalInSeconds": 30
                                     },
                                     "userProperties": [],
                                     "typeProperties": {
+                                        "method": "POST",
+                                        "headers": {
+                                            "Content-Type": "application/json",
+                                            "Authorization": {
+                                                "value": "Bearer @{variables('BearerToken')}",
+                                                "type": "Expression"
+                                            }
+                                        },
                                         "url": {
                                             "value": "@pipeline().parameters.apiUrl",
                                             "type": "Expression"
-                                        },
-                                        "method": "POST",
-                                        "headers": {
-                                            "Content-Type": "application/json"
                                         },
                                         "body": {
                                             "value": "@string(item())",
@@ -158,67 +268,124 @@
                                     }
                                 },
                                 {
-                                    "name": "AppendToAuditFile",
-                                    "description": "Append one JSONL audit line to the single audit file for this run. The 'operation' field is read from the API response body (activity('PostToApi').output.json.action). If the field is absent, it falls back to 'Unknown'. Runs on both Succeeded and Failed outcomes of PostToApi so every record is always audited. Audit file path: audit/<pipelineRunId>/audit.jsonl",
-                                    "type": "WebActivity",
+                                    "name": "Append_Request_To_Log_Variable",
+                                    "description": "Appends the exact JSON string of the current record to the ApiRequestLog array. This runs regardless of whether the API call succeeded or failed.",
+                                    "type": "AppendVariable",
                                     "dependsOn": [
                                         {
-                                            "activity": "PostToApi",
+                                            "activity": "Call_API",
                                             "dependencyConditions": [
-                                                "Succeeded",
-                                                "Failed"
+                                                "Completed"
                                             ]
                                         }
                                     ],
-                                    "policy": {
-                                        "timeout": "0.00:10:00",
-                                        "retry": 0,
-                                        "retryIntervalInSeconds": 30,
-                                        "secureOutput": false,
-                                        "secureInput": false
-                                    },
                                     "userProperties": [],
                                     "typeProperties": {
-                                        "url": {
-                                            "value": "@concat(pipeline().parameters.storageUri, 'audit/', pipeline().RunId, '/audit.jsonl?comp=appendblock')",
+                                        "variableName": "ApiRequestLog",
+                                        "value": {
+                                            "value": "@string(item())",
                                             "type": "Expression"
-                                        },
-                                        "method": "PUT",
-                                        "headers": {
-                                            "x-ms-version": "2021-06-08",
-                                            "x-ms-blob-type": "AppendBlob",
-                                            "Content-Type": "application/octet-stream"
-                                        },
-                                        "body": {
-                                            "value": "@concat(string(createObject('personId', item().personId, 'operation', if(and(contains(activity('PostToApi').output, 'json'), contains(activity('PostToApi').output.json, 'action')), activity('PostToApi').output.json.action, 'Unknown'), 'httpStatusCode', activity('PostToApi').output.statusCode, 'apiResponseSnippet', substring(string(activity('PostToApi').output), 0, min(200, length(string(activity('PostToApi').output)))), 'timestamp', utcNow(), 'pipelineRunId', pipeline().RunId, 'activityRunId', activity('PostToApi').ActivityRunId)), '\n')",
-                                            "type": "Expression"
-                                        },
-                                        "authentication": {
-                                            "type": "MSI",
-                                            "resource": "https://storage.azure.com/"
                                         }
                                     }
                                 }
                             ]
                         }
+                    },
+                    {
+                        "name": "Write_Request_Log_File",
+                        "description": "After the loop completes, writes a single JSON file to the audit container containing: all sent request payloads (allSentRequests), the pipeline run ID (runId), and the UTC timestamp (timestampUtc).",
+                        "type": "Copy",
+                        "dependsOn": [
+                            {
+                                "activity": "ForEach_Request",
+                                "dependencyConditions": [
+                                    "Completed"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "JsonSource",
+                                "additionalColumns": [
+                                    {
+                                        "name": "runId",
+                                        "value": {
+                                            "value": "@pipeline().RunId",
+                                            "type": "Expression"
+                                        }
+                                    },
+                                    {
+                                        "name": "timestampUtc",
+                                        "value": {
+                                            "value": "@utcNow()",
+                                            "type": "Expression"
+                                        }
+                                    },
+                                    {
+                                        "name": "allSentRequests",
+                                        "value": {
+                                            "value": "@concat('[', join(variables('ApiRequestLog'), ','), ']')",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                ]
+                            },
+                            "sink": {
+                                "type": "JsonSink",
+                                "storeSettings": {
+                                    "type": "AzureBlobFSWriteSettings"
+                                },
+                                "formatSettings": {
+                                    "type": "JsonWriteSettings",
+                                    "filePattern": "setOfObjects"
+                                }
+                            },
+                            "enableStaging": false
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "DummySourceDataset",
+                                "type": "DatasetReference"
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "OutputDataset",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "fileName": {
+                                        "value": "@concat('request_log_', pipeline().RunId, '.json')",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        ]
                     }
                 ],
+                "variables": {
+                    "BearerToken": {
+                        "type": "String"
+                    },
+                    "ApiRequestLog": {
+                        "type": "Array",
+                        "defaultValue": []
+                    }
+                },
                 "parameters": {
                     "inputFileName": {
                         "type": "string",
                         "defaultValue": "people_array.json"
                     },
-                    "inputFileFormat": {
-                        "type": "string",
-                        "defaultValue": "json"
-                    },
                     "apiUrl": {
                         "type": "string",
                         "defaultValue": "[parameters('apiUrl')]"
-                    },
-                    "storageUri": {
-                        "type": "string",
-                        "defaultValue": "[parameters('storageUri')]"
                     }
                 },
                 "annotations": []

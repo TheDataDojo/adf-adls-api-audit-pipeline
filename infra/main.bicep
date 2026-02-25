@@ -6,7 +6,7 @@ param resourceBaseName string = 'adflab'
 @description('The location for all resources.')
 param location string = resourceGroup().location
 
-@description('The URL of the API endpoint to call.')
+@description('The URL of the API endpoint to call. Defaults to httpbin.org for lab use.')
 param apiUrl string = 'https://httpbin.org/post'
 
 var adfName = '${resourceBaseName}-adf'
@@ -65,6 +65,7 @@ resource roleAssignment 'Microsoft.Authorization/roleAssignments@2020-04-01-prev
 resource adfArtifacts 'Microsoft.Resources/deployments@2021-04-01' = {
   name: 'adf-artifacts-deployment'
   resourceGroup: resourceGroup().name
+  dependsOn: [ adf, roleAssignment ]
   properties: {
     mode: 'Incremental'
     templateLink: {
@@ -80,3 +81,4 @@ resource adfArtifacts 'Microsoft.Resources/deployments@2021-04-01' = {
 
 output adfName string = adfName
 output storageAccountName string = storageAccountName
+output storageUri string = storage.properties.primaryEndpoints.dfs

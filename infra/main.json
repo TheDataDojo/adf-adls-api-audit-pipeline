@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "4034909616277726679"
+      "templateHash": "5270912047760883624"
     }
   },
   "parameters": {
@@ -27,7 +27,7 @@
       "type": "string",
       "defaultValue": "https://httpbin.org/post",
       "metadata": {
-        "description": "The URL of the API endpoint to call."
+        "description": "The URL of the API endpoint to call. Defaults to httpbin.org for lab use."
       }
     }
   },
@@ -120,6 +120,8 @@
         }
       },
       "dependsOn": [
+        "[resourceId('Microsoft.DataFactory/factories', variables('adfName'))]",
+        "[extensionResourceId(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), 'Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, variables('adfName'), subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e7a58add09c9')))]",
         "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
       ]
     }
@@ -132,6 +134,10 @@
     "storageAccountName": {
       "type": "string",
       "value": "[variables('storageAccountName')]"
+    },
+    "storageUri": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2021-09-01').primaryEndpoints.dfs]"
     }
   }
 }

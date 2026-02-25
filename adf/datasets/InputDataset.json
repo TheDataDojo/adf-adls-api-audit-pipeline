@@ -1,0 +1,27 @@
+{
+    "name": "InputDataset",
+    "properties": {
+        "linkedServiceName": {
+            "referenceName": "AzureDataLakeStorage",
+            "type": "LinkedServiceReference"
+        },
+        "parameters": {
+            "fileName": {
+                "type": "string"
+            }
+        },
+        "annotations": [],
+        "type": "Json",
+        "typeProperties": {
+            "location": {
+                "type": "AzureBlobFSLocation",
+                "fileName": {
+                    "value": "@dataset().fileName",
+                    "type": "Expression"
+                },
+                "fileSystem": "inputs"
+            }
+        },
+        "schema": {}
+    }
+}
