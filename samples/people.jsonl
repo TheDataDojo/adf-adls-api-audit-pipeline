@@ -1,2 +1,5 @@
-{"personId":"1","name":"John Doe","age":30}
-{"personId":"2","name":"Jane Smith","age":25}
+{"personId":"1","name":"John Doe","age":30,"operation":"Create"}
+{"personId":"2","name":"Jane Smith","age":25,"operation":"Update"}
+{"personId":"1","name":"John Doe","age":31,"operation":"Update"}
+{"personId":"3","name":"Sam Jones","age":45,"operation":"Create"}
+{"personId":"2","name":"Jane Smith","operation":"Delete"}

@@ -74,16 +74,17 @@ Each line is a valid JSON object:
 
 ```json
 {
-  "fullPayload": { "personId": "1", "name": "John Doe", "age": 30 },
+  "personId": "1",
+  "operation": "Create",
+  "httpStatusCode": 200,
+  "apiResponseSnippet": "{\"args\":{},\"data\":\"{\\\"personId\\\":\\\"1\\\",\\\"name\\\":\\\"John Doe\\\",\\\"age\\\":30,\\\"operation\\\":\\\"Create\\\"}\",\"files\":{},\"form\":{},\"headers\":{\"Accept\":\"*/*\",\"Content-Length\":\"68\",\"Content-Type\":\"application/json\",\"Host\":\"httpbin.org\",\"X-Amzn-Trace-Id\":\"Root=1-664f6e3c-1234567890abcdef12345678\"},\"json\":{\"age\":30,\"name\":\"John Doe\",\"operation\":\"Create\",\"personId\":\"1\"},\"origin\":\"52.202.10.1\",\"url\":\"https://httpbin.org/post\"}",
   "timestamp": "2024-01-15T10:30:00Z",
   "pipelineRunId": "abc123...",
-  "activityRunId": "def456...",
-  "httpStatusCode": 200,
-  "operation": "Unknown"
+  "activityRunId": "def456..."
 }
 ```
 
-> **Note on `operation` field:** The default API (`httpbin.org`) does not return a semantic operation indicator. The field is set to `Unknown` and the HTTP status code is logged for correlation. If your target API returns a meaningful operation in its response body, update the `AppendToAuditFile` activity expression accordingly.
+> **Note on `operation` field:** The `operation` field is now read directly from the input record. If the field is missing from a record, it will be stamped as `Unknown` in the audit log.
 
 ---
 
@@ -118,7 +119,7 @@ The pipeline uses `isSequential: true` on the `ForEach` activity to enforce **se
 
 | Symptom | Likely Cause | Fix |
 |---|---|---|
-| `BadRequest` or null body on `PostToApi` | Body not serialized as string | Ensure `@json(item())` is used in the Web Activity body |
+| `BadRequest` or null body on `PostToApi` | Body not serialized as string | Ensure `@string(item())` is used in the Web Activity body |
 | `AuthorizationPermissionMismatch` on audit write | ADF managed identity missing RBAC | Verify **Storage Blob Data Contributor** is assigned to the ADF identity on the storage account |
 | `BlobAccessTierNotSupported` or 404 on append | Wrong endpoint type | Use the **DFS** endpoint (`dfs.core.windows.net`), not the Blob endpoint, for ADLS Gen2 append operations |
-| Activity output reference error | Referencing output of a non-ancestor activity | In ADF, `activity('X').output` is only valid inside the same `ForEach` scope where `X` ran |
+| Activity output reference error | Referencing output of a non-ancestor activity | In ADF, `activity(\'X\').output` is only valid inside the same `ForEach` scope where `X` ran |

@@ -21,12 +21,8 @@
                 "annotations": [],
                 "type": "AzureBlobFS",
                 "typeProperties": {
-                    "url": "@{",
-                    "accountKey": null,
-                    "servicePrincipalId": null,
-                    "servicePrincipalKey": null,
-                    "tenant": null,
-                    "managedIdentityCredential": {
+                    "url": "[parameters('storageUri')]",
+                    "credential": {
                         "referenceName": "default",
                         "type": "ManagedIdentity"
                     }
@@ -34,23 +30,12 @@
             }
         },
         {
-            "type": "Microsoft.DataFactory/factories/linkedservices",
-            "name": "[concat(parameters('factoryName'), '/HttpServer')]",
-            "apiVersion": "2018-06-01",
-            "properties": {
-                "annotations": [],
-                "type": "HttpServer",
-                "typeProperties": {
-                    "url": "@{parameters(\'apiUrl\')}",
-                    "enableServerCertificateValidation": true,
-                    "authenticationType": "Anonymous"
-                }
-            }
-        },
-        {
             "type": "Microsoft.DataFactory/factories/datasets",
             "name": "[concat(parameters('factoryName'), '/InputDataset')]",
             "apiVersion": "2018-06-01",
+            "dependsOn": [
+                "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'), '/linkedservices/AzureDataLakeStorage')]"
+            ],
             "properties": {
                 "linkedServiceName": {
                     "referenceName": "AzureDataLakeStorage",
@@ -87,10 +72,15 @@
             "type": "Microsoft.DataFactory/factories/pipelines",
             "name": "[concat(parameters('factoryName'), '/ProcessPersonRecords')]",
             "apiVersion": "2018-06-01",
+            "dependsOn": [
+                "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'), '/datasets/InputDataset')]"
+            ],
             "properties": {
+                "description": "Reads person records from ADLS Gen2, POSTs each record to a target API, and appends a JSONL audit line capturing the CRUD operation, HTTP status, and run correlation IDs.",
                 "activities": [
                     {
                         "name": "LookupInputFile",
+                        "description": "Read all records from the input file into memory.",
                         "type": "Lookup",
                         "dependsOn": [],
                         "policy": {
@@ -106,7 +96,7 @@
                                 "type": "JsonSource",
                                 "storeSettings": {
                                     "type": "AzureBlobFSReadSettings",
-                                    "recursive": true
+                                    "recursive": false
                                 }
                             },
                             "dataset": {
@@ -121,6 +111,7 @@
                     },
                     {
                         "name": "ForEachRecord",
+                        "description": "Process each person record sequentially. Sequential execution (isSequential=true) is required to prevent concurrent Append Blob write corruption on the single audit file.",
                         "type": "ForEach",
                         "dependsOn": [
                             {
@@ -133,13 +124,14 @@
                         "userProperties": [],
                         "typeProperties": {
                             "items": {
-                                "value": "@if(equals(pipeline().parameters.inputFileFormat, 'json'), activity('LookupInputFile').output.value, split(activity('LookupInputFile').output.value, '\n'))",
+                                "value": "@activity('LookupInputFile').output.value",
                                 "type": "Expression"
                             },
                             "isSequential": true,
                             "activities": [
                                 {
                                     "name": "PostToApi",
+                                    "description": "POST the person record to the target API. The record must include an 'operation' field (Create/Update/Delete) which is passed through to the API and captured in the audit log.",
                                     "type": "WebActivity",
                                     "dependsOn": [],
                                     "policy": {
@@ -156,20 +148,25 @@
                                             "type": "Expression"
                                         },
                                         "method": "POST",
+                                        "headers": {
+                                            "Content-Type": "application/json"
+                                        },
                                         "body": {
-                                            "value": "@json(item())",
+                                            "value": "@string(item())",
                                             "type": "Expression"
                                         }
                                     }
                                 },
                                 {
                                     "name": "AppendToAuditFile",
+                                    "description": "Append one JSONL audit line to the single audit file for this run. The 'operation' field is read directly from the input record (item().operation). If the field is absent, it falls back to 'Unknown'. The audit file path is: audit/<pipelineRunId>/audit.jsonl",
                                     "type": "WebActivity",
                                     "dependsOn": [
                                         {
                                             "activity": "PostToApi",
                                             "dependencyConditions": [
-                                                "Succeeded"
+                                                "Succeeded",
+                                                "Failed"
                                             ]
                                         }
                                     ],
@@ -183,20 +180,19 @@
                                     "userProperties": [],
                                     "typeProperties": {
                                         "url": {
-                                            "value": "@{concat(parameters('storageUri'), 'audit/', pipeline().RunId, '/audit.jsonl?comp=appendblock&position=0')}",
+                                            "value": "@concat(pipeline().parameters.storageUri, 'audit/', pipeline().RunId, '/audit.jsonl?comp=appendblock')",
                                             "type": "Expression"
                                         },
-                                        "method": "PATCH",
+                                        "method": "PUT",
+                                        "headers": {
+                                            "x-ms-version": "2021-06-08",
+                                            "x-ms-blob-type": "AppendBlob",
+                                            "Content-Type": "application/octet-stream"
+                                        },
                                         "body": {
-                                            "value": "@{json(string(createObject('fullPayload', item(), 'timestamp', utcNow(), 'pipelineRunId', pipeline().RunId, 'activityRunId', activity('PostToApi').activityRunId, 'httpStatusCode', activity('PostToApi').output.statusCode, 'operation', 'Unknown')))}",
+                                            "value": "@concat(string(createObject('personId', item().personId, 'operation', if(contains(item(), 'operation'), item().operation, 'Unknown'), 'httpStatusCode', activity('PostToApi').output.statusCode, 'apiResponseSnippet', substring(string(activity('PostToApi').output), 0, min(200, length(string(activity('PostToApi').output)))), 'timestamp', utcNow(), 'pipelineRunId', pipeline().RunId, 'activityRunId', activity('PostToApi').ActivityRunId)), '\n')",
                                             "type": "Expression"
                                         },
-                                        "headers": [
-                                            {
-                                                "name": "x-ms-version",
-                                                "value": "2021-06-08"
-                                            }
-                                        ],
                                         "authentication": {
                                             "type": "MSI",
                                             "resource": "https://storage.azure.com/"
@@ -209,7 +205,8 @@
                 ],
                 "parameters": {
                     "inputFileName": {
-                        "type": "string"
+                        "type": "string",
+                        "defaultValue": "people_array.json"
                     },
                     "inputFileFormat": {
                         "type": "string",
@@ -217,7 +214,11 @@
                     },
                     "apiUrl": {
                         "type": "string",
-                        "defaultValue": "@{parameters(\'apiUrl\')}"
+                        "defaultValue": "[parameters('apiUrl')]"
+                    },
+                    "storageUri": {
+                        "type": "string",
+                        "defaultValue": "[parameters('storageUri')]"
                     }
                 },
                 "annotations": []

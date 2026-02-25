@@ -1,1 +1,150 @@
-{"name":"ProcessPersonRecords","properties":{"activities":[{"name":"LookupInputFile","type":"Lookup","dependsOn":[],"policy":{"timeout":"7.00:00:00","retry":0,"retryIntervalInSeconds":30,"secureOutput":false,"secureInput":false},"userProperties":[],"typeProperties":{"source":{"type":"JsonSource","storeSettings":{"type":"AzureBlobFSReadSettings","recursive":true}},"dataset":{"referenceName":"InputDataset","type":"DatasetReference","parameters":{"fileName":"@pipeline().parameters.inputFileName"}},"firstRowOnly":false}},{"name":"ForEachRecord","type":"ForEach","dependsOn":[{"activity":"LookupInputFile","dependencyConditions":["Succeeded"]}],"userProperties":[],"typeProperties":{"items":{"value":"@if(equals(pipeline().parameters.inputFileFormat, 'json'), activity('LookupInputFile').output.value, split(activity('LookupInputFile').output.value, '\n'))","type":"Expression"},"isSequential":true,"activities":[{"name":"PostToApi","type":"WebActivity","dependsOn":[],"policy":{"timeout":"0.00:10:00","retry":0,"retryIntervalInSeconds":30,"secureOutput":false,"secureInput":false},"userProperties":[],"typeProperties":{"url":{"value":"@pipeline().parameters.apiUrl","type":"Expression"},"method":"POST","body":{"value":"@json(item())","type":"Expression"}}},{"name":"AppendToAuditFile","type":"WebActivity","dependsOn":[{"activity":"PostToApi","dependencyConditions":["Succeeded"]}],"policy":{"timeout":"0.00:10:00","retry":0,"retryIntervalInSeconds":30,"secureOutput":false,"secureInput":false},"userProperties":[],"typeProperties":{"url":{"value":"@concat(pipeline().parameters.storageUri, '/audit/', pipeline().RunId, '/audit.jsonl?comp=appendblock&position=0')","type":"Expression"},"method":"PATCH","body":{"value":"@json(concat('{\"fullPayload\":', string(item()), ',\"timestamp\":\"', utcNow(), '\",\"pipelineRunId\":\"', pipeline().RunId, '\",\"activityRunId\":\"', activity('PostToApi').ActivityRunId, '\",\"httpStatusCode\":', activity('PostToApi').output.StatusCode, ',\"operation\":\"Unknown\"}'))","type":"Expression"},"headers":[{"name":"x-ms-version","value":"2021-06-08"}],"authentication":{"type":"MSI","resource":"https://storage.azure.com/"}}}]}}],"parameters":{"inputFileName":{"type":"string"},"inputFileFormat":{"type":"string","defaultValue":"json"},"apiUrl":{"type":"string","defaultValue":"https://httpbin.org/post"},"storageUri":{"type":"string"}},"annotations":[]}}
+{
+    "name": "ProcessPersonRecords",
+    "properties": {
+        "description": "Reads person records from ADLS Gen2, POSTs each record to a target API, and appends a JSONL audit line capturing the CRUD operation, HTTP status, and run correlation IDs.",
+        "activities": [
+            {
+                "name": "LookupInputFile",
+                "description": "Read all records from the input file into memory.",
+                "type": "Lookup",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "7.00:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "JsonSource",
+                        "storeSettings": {
+                            "type": "AzureBlobFSReadSettings",
+                            "recursive": false
+                        }
+                    },
+                    "dataset": {
+                        "referenceName": "InputDataset",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "fileName": "@pipeline().parameters.inputFileName"
+                        }
+                    },
+                    "firstRowOnly": false
+                }
+            },
+            {
+                "name": "ForEachRecord",
+                "description": "Process each person record sequentially. Sequential execution (isSequential=true) is required to prevent concurrent Append Blob write corruption on the single audit file.",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "LookupInputFile",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('LookupInputFile').output.value",
+                        "type": "Expression"
+                    },
+                    "isSequential": true,
+                    "activities": [
+                        {
+                            "name": "PostToApi",
+                            "description": "POST the person record to the target API. The record must include an 'operation' field (Create/Update/Delete) which is passed through to the API and captured in the audit log.",
+                            "type": "WebActivity",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "0.00:10:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "url": {
+                                    "value": "@pipeline().parameters.apiUrl",
+                                    "type": "Expression"
+                                },
+                                "method": "POST",
+                                "headers": {
+                                    "Content-Type": "application/json"
+                                },
+                                "body": {
+                                    "value": "@string(item())",
+                                    "type": "Expression"
+                                }
+                            }
+                        },
+                        {
+                            "name": "AppendToAuditFile",
+                            "description": "Append one JSONL audit line to the single audit file for this run. The 'operation' field is read directly from the input record (item().operation). If the field is absent, it falls back to 'Unknown'. Runs on both Succeeded and Failed outcomes of PostToApi so every record is always audited. Audit file path: audit/<pipelineRunId>/audit.jsonl",
+                            "type": "WebActivity",
+                            "dependsOn": [
+                                {
+                                    "activity": "PostToApi",
+                                    "dependencyConditions": [
+                                        "Succeeded",
+                                        "Failed"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "0.00:10:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "url": {
+                                    "value": "@concat(pipeline().parameters.storageUri, 'audit/', pipeline().RunId, '/audit.jsonl?comp=appendblock')",
+                                    "type": "Expression"
+                                },
+                                "method": "PUT",
+                                "headers": {
+                                    "x-ms-version": "2021-06-08",
+                                    "x-ms-blob-type": "AppendBlob",
+                                    "Content-Type": "application/octet-stream"
+                                },
+                                "body": {
+                                    "value": "@concat(string(createObject('personId', item().personId, 'operation', if(contains(item(), 'operation'), item().operation, 'Unknown'), 'httpStatusCode', activity('PostToApi').output.statusCode, 'apiResponseSnippet', substring(string(activity('PostToApi').output), 0, min(200, length(string(activity('PostToApi').output)))), 'timestamp', utcNow(), 'pipelineRunId', pipeline().RunId, 'activityRunId', activity('PostToApi').ActivityRunId)), '\n')",
+                                    "type": "Expression"
+                                },
+                                "authentication": {
+                                    "type": "MSI",
+                                    "resource": "https://storage.azure.com/"
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        ],
+        "parameters": {
+            "inputFileName": {
+                "type": "string",
+                "defaultValue": "people_array.json"
+            },
+            "inputFileFormat": {
+                "type": "string",
+                "defaultValue": "json"
+            },
+            "apiUrl": {
+                "type": "string",
+                "defaultValue": "https://httpbin.org/post"
+            },
+            "storageUri": {
+                "type": "string"
+            }
+        },
+        "annotations": []
+    }
+}
