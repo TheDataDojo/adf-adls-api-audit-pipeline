@@ -1,0 +1,27 @@
+{"time":"2026-02-24T22:11:43.058796448-05:00","level":"INFO","msg":"Sentry initialized","dsn":"https://962d173a894d***","environment":"PROD","release":"7.0.20","sandbox_id":"i5u1kzfuo1bfqvs197uby"}
+{"time":"2026-02-24T22:11:43.059651584-05:00","level":"INFO","msg":"Sentry initialized successfully"}
+{"time":"2026-02-24T22:11:43.059666432-05:00","level":"INFO","msg":"State sync service starting","log_file":"/home/ubuntu/.logs/state-sync/state-sync.log"}
+{"time":"2026-02-24T22:11:43.059835815-05:00","level":"INFO","msg":"Starting state sync service"}
+{"time":"2026-02-24T22:11:43.059858344-05:00","level":"INFO","msg":"Pulling initial state from S3"}
+{"time":"2026-02-24T22:11:43.0598727-05:00","level":"INFO","msg":"Pull not allowed currently, will retry when config changes"}
+{"time":"2026-02-24T22:11:43.059877936-05:00","level":"INFO","msg":"Connecting to browser","port":"9222"}
+{"time":"2026-02-24T22:11:43.07766657-05:00","level":"INFO","msg":"Found chrome://newtab/ to reuse","target_id":"1F7DFAEC04C0E96BE2A91AA57FB955D6"}
+{"time":"2026-02-24T22:11:43.077755954-05:00","level":"INFO","msg":"Reusing existing target for cookie sync","target_id":"1F7DFAEC04C0E96BE2A91AA57FB955D6"}
+{"time":"2026-02-24T22:11:43.077794003-05:00","level":"INFO","msg":"Successfully connected to browser"}
+{"time":"2026-02-24T22:11:43.077800788-05:00","level":"INFO","msg":"Syncing state to browser"}
+{"time":"2026-02-24T22:11:43.077806386-05:00","level":"INFO","msg":"Syncing cookies to browser","cookie_count":0}
+{"time":"2026-02-24T22:11:43.117121947-05:00","level":"INFO","msg":"Successfully synced cookies to browser"}
+{"time":"2026-02-24T22:11:43.117141687-05:00","level":"INFO","msg":"Successfully synced state to browser"}
+{"time":"2026-02-24T22:11:43.117145667-05:00","level":"INFO","msg":"Setting up state watchers"}
+{"time":"2026-02-24T22:11:43.117151421-05:00","level":"INFO","msg":"Starting CDP watcher"}
+{"time":"2026-02-24T22:11:43.130014485-05:00","level":"INFO","msg":"Created hidden monitoring target","target_id":"7A1940B43B7879F7BC09A009EE6FFED1"}
+{"time":"2026-02-24T22:11:43.13006288-05:00","level":"INFO","msg":"Using hidden target for monitoring (should not be visible)"}
+{"time":"2026-02-24T22:11:43.130070516-05:00","level":"INFO","msg":"State watchers setup complete"}
+{"time":"2026-02-24T22:11:43.130074147-05:00","level":"INFO","msg":"Waiting for browser to stabilize after cookie sync","delay":5000000000}
+{"time":"2026-02-24T22:11:43.130092236-05:00","level":"INFO","msg":"Starting target monitoring"}
+{"time":"2026-02-24T22:11:43.165054225-05:00","level":"INFO","msg":"Handling target","target_id":"1F7DFAEC04C0E96BE2A91AA57FB955D6","url":"chrome://newtab/"}
+{"time":"2026-02-24T22:11:48.13334229-05:00","level":"INFO","msg":"Browser stabilization complete, cookie polling started with current state as baseline"}
+{"time":"2026-02-24T22:11:48.133454062-05:00","level":"INFO","msg":"Starting cookie polling","interval":1000000000}
+{"time":"2026-02-24T22:11:48.133504857-05:00","level":"INFO","msg":"Wrote sync ready marker","path":"/home/ubuntu/.config/state-sync/.sync-ready"}
+{"time":"2026-02-24T22:11:48.133525784-05:00","level":"INFO","msg":"State sync service started successfully"}
+{"time":"2026-02-24T22:11:48.133675148-05:00","level":"INFO","msg":"Started watching config file","path":"/home/ubuntu/.config/state-sync/state-sync-config.yaml"}

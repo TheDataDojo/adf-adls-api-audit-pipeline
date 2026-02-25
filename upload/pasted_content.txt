@@ -1,0 +1,225 @@
+Build a complete Lab-in-a-Box GitHub repository that demonstrates an Azure Data Factory (ADF) pipeline that:
+
+Reads from ADLS Gen2 an input file containing multiple “person” records in two formats:
+
+JSON array of objects (e.g., [{"personId":"1",...}, {...}])
+
+JSON Lines / JSONL (one JSON object per line)
+
+Processes each record and sends it to a designated API endpoint (default should be a public test API).
+
+Generates a single consolidated audit file in ADLS Gen2 (JSONL) capturing:
+
+full payload sent
+
+timestamp (UTC)
+
+pipeline run id / activity run id (or equivalent run correlation)
+
+HTTP status code (when success)
+
+error details (when failure)
+
+derived “operation” (Created/Updated/Deleted/Unknown) based on API response/status code or response body when possible, and clearly document limitations (if API doesn’t explicitly indicate operation, mark as Unknown and log status/response snippet)
+
+Must be production-grade in structure and documentation, but still simple:
+
+Use Append Blob pattern for one audit file per run.
+
+Ensure the design avoids concurrent append corruption. If the design uses a single consolidated audit file, enforce sequential logging (and explain tradeoffs). If parallelism is needed, implement a safe alternative and document it.
+
+Repo Requirements
+
+Create a repository that includes:
+
+Bicep infrastructure as code to deploy everything
+
+A Deploy to Azure button in the README that is dynamic for forks:
+
+It must work when someone forks the repo without editing the link
+
+It must automatically deploy the ARM/Bicep template from the fork’s default branch
+
+It must not hardcode the original org/repo
+
+Use the standard “deploy button to raw GitHub URL” approach with placeholders that resolve in forks (document how it works and any GitHub limitations). Provide the best possible fork-safe approach.
+
+All code and artifacts must be in the repo (no external manual steps beyond clicking deploy and then running the pipeline).
+
+Default Public API
+
+Use a public endpoint that accepts POST and returns status, e.g.:
+
+https://httpbin.org/post
+or equivalent. Include this as the default pipeline parameter.
+
+Azure Resources to Deploy (Bicep)
+
+The Bicep deployment must provision:
+
+Resource Group scope is assumed (Bicep at RG scope).
+
+Azure Data Factory (or Synapse pipeline option if you choose—prefer ADF)
+
+Storage Account (ADLS Gen2 enabled) with:
+
+a filesystem/container for inputs
+
+a filesystem/container/folder for audit outputs
+
+ADF Managed Identity and correct permissions to Storage:
+
+RBAC assignment: Storage Blob Data Contributor
+
+Include guidance for ADLS ACLs if needed; attempt to automate where possible
+
+Optional: Key Vault if you include secrets; but prefer no secrets for the public API demo.
+
+ADF Pipeline Design (must be deployable via ARM/ADF JSON)
+
+Create an ADF pipeline definition that:
+
+Reads input from ADLS Gen2 using datasets
+
+Supports both JSON array and JSONL:
+
+Provide either two pipelines or one pipeline parameter that toggles parsing mode
+
+If JSONL parsing in ADF is complex, provide a robust approach (e.g., Data Flow or preprocessing) and document clearly
+
+For each record:
+
+POST to API using Web activity (body must be string)
+
+Append an audit JSONL line to a single audit file using Blob REST Append Blob (?comp=appendblock)
+
+Use pipeline parameters for:
+
+storage account/container paths
+
+API URL
+
+audit prefix path
+
+input file path
+
+mode (array vs jsonl)
+
+Audit File Requirements
+
+Audit file must be one single file per pipeline run, e.g.:
+audit/<pipelineName>/runId=<runId>/audit.jsonl
+
+Each line must be valid JSON and safe for JSONL. If payload can contain newline characters, log payload as:
+
+either escaped JSON string
+
+or base64-encoded payload (payload_b64) plus metadata
+Choose the safest method and document the decoding step.
+
+Lab Content Requirements
+
+The repo must include:
+
+README.md with:
+
+Architecture diagram (ASCII is fine, or Mermaid)
+
+Step-by-step lab instructions:
+
+click Deploy to Azure
+
+verify resources
+
+upload sample input files to ADLS
+
+trigger pipeline run
+
+verify API calls (explain how to inspect httpbin response if applicable)
+
+verify audit.jsonl in ADLS
+
+Troubleshooting section:
+
+common ADF errors (BadRequest null, missing body, activity output ancestor issue)
+
+storage permission/ACL issues
+
+blob vs dfs endpoint explanation
+
+A /infra folder with Bicep:
+
+main.bicep
+
+main.parameters.json (with safe defaults)
+
+any modules required
+
+A /adf folder with:
+
+pipeline JSON
+
+dataset JSON
+
+linked service JSON (ADLS Gen2 + HTTP as needed)
+
+factory resources packaged in an ARM template or ADF publish format that the Bicep deployment uses
+
+A /samples folder:
+
+people_array.json (JSON array)
+
+people.jsonl (JSON lines)
+
+A /scripts folder (optional but preferred):
+
+upload-samples.ps1 and/or upload-samples.sh (Azure CLI) to upload sample files to storage
+
+script to trigger ADF pipeline run via REST/Az CLI (optional)
+
+GitHub Actions (optional):
+
+Lint Bicep, validate JSON files
+
+Deploy Button Requirement (Fork-safe)
+
+Implement a Deploy to Azure button that works from forks. Use the best available method:
+
+Use the Azure portal “create from custom template” link referencing a raw GitHub URL that points to the ARM template JSON that is generated from Bicep or included in repo.
+
+Make it fork-safe by using relative GitHub path assumptions where possible and documenting:
+
+The deploy link should reference the template in the same repo; when forked, the raw URL changes, but GitHub renders the README in the fork, so links must be relative or computed.
+If truly dynamic computation is impossible in a static README, implement the most robust workaround:
+
+Provide a short “Generate Deploy Link” section that uses GitHub context or shields.io style to build the correct raw URL, OR
+
+Provide a GitHub Action that updates a deploy.json link on fork (explain limitations).
+Pick the best practical solution and justify it in README.
+
+Output Format
+
+Return:
+
+A full file tree.
+
+Full contents of every file.
+No placeholders. No “TODO”. Everything complete.
+
+Quality Bar
+
+Keep it minimal but truly production-grade
+
+Make the lab runnable end-to-end after deployment with default values
+
+Ensure all ADF expressions are correct:
+
+Web activity bodies as strings
+
+Correct dependency scoping (no referencing non-ancestor activities)
+
+Avoid compile-time failures
+
+Provide clear comments inside templates and pipeline JSON.
+
+Now generate the repository accordingly.
