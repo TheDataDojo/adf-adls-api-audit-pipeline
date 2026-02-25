@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "8972200055819104534"
+      "templateHash": "4034909616277726679"
     }
   },
   "parameters": {
@@ -105,7 +105,7 @@
       "properties": {
         "mode": "Incremental",
         "templateLink": {
-          "uri": "https://raw.githubusercontent.com/TheDataDojo/adf-lab-in-a-box/main/adf/factory.json"
+          "uri": "https://raw.githubusercontent.com/TheDataDojo/adf-adls-api-audit-pipeline/master/adf/factory.json"
         },
         "parameters": {
           "factoryName": {

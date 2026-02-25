@@ -1,94 +1,124 @@
-# Azure Data Factory - API Processing and Auditing Lab
+# ADF ADLS API Audit Pipeline — Lab in a Box
 
-This repository provides a complete "lab-in-a-box" to demonstrate a common data integration pattern using Azure Data Factory (ADF). The pipeline reads person records from Azure Data Lake Storage (ADLS) Gen2, processes each record by sending it to a public API endpoint, and logs the results to a consolidated audit file.
+An end-to-end Azure Data Factory lab that reads person records from ADLS Gen2, POSTs each record to a public API endpoint, and writes a consolidated JSONL audit file back to ADLS Gen2 — all deployed in one click.
 
-This project is designed to be production-grade in its structure and documentation, yet simple enough to be deployed and understood quickly.
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FTheDataDojo%2Fadf-adls-api-audit-pipeline%2Fmaster%2Finfra%2Fmain.json)
+
+> **Fork note:** If you have forked this repo, replace `TheDataDojo/adf-adls-api-audit-pipeline` in the button URL above with your own `<org>/<repo>` before deploying.
+
+---
 
 ## Architecture
 
-The following diagram illustrates the overall architecture of the solution:
-
 ```mermaid
-graph TD
-    A[ADLS Gen2 Input] --> B{ADF Pipeline};
-    B --> C[Web Activity: POST to API];
-    C --> D{API Endpoint};
-    B --> E[Web Activity: Append to Audit File];
-    E --> F[ADLS Gen2 Audit];
+graph LR
+    A[ADLS Gen2\ninputs container] -->|Lookup Activity| B[ADF Pipeline\nProcessPersonRecords]
+    B -->|ForEach record| C[Web Activity\nPOST to API]
+    C -->|On success| D[Web Activity\nAppend Blob\naudit.jsonl]
+    D --> E[ADLS Gen2\naudit container]
 ```
 
-## Features
+---
 
-*   **Infrastructure as Code (IaC):** All Azure resources are defined using Bicep, enabling automated and repeatable deployments.
-*   **Dynamic "Deploy to Azure" Button:** The README includes a fork-safe "Deploy to Azure" button that automatically works from your own fork of this repository.
-*   **Flexible Input Formats:** The ADF pipeline can process both JSON array and JSON Lines (JSONL) input files.
-*   **Robust Auditing:** A consolidated audit file is generated for each pipeline run, capturing the full payload, timestamps, run IDs, and API responses.
-*   **Managed Identity:** The ADF pipeline securely authenticates to the ADLS Gen2 storage account using a system-assigned managed identity.
+## What Gets Deployed
 
-## Getting Started
+| Resource | Purpose |
+|---|---|
+| Azure Data Factory | Hosts the `ProcessPersonRecords` pipeline |
+| Storage Account (ADLS Gen2) | `inputs` container for source files; `audit` container for audit output |
+| System-Assigned Managed Identity | ADF identity granted **Storage Blob Data Contributor** on the storage account |
 
-### Prerequisites
+---
 
-*   An Azure subscription. If you don't have one, create a [free account](https://azure.microsoft.com/free/).
-*   Azure CLI installed and configured.
+## Lab Instructions
 
-### Deployment
+### 1. Deploy
 
-1.  **Fork this repository:** Click the "Fork" button at the top-right of this page to create your own copy of this repository.
+Click **Deploy to Azure** above. Fill in a resource group and a `resourceBaseName` (e.g. `adflab`). All resources will be provisioned automatically.
 
-2.  **Deploy to Azure:** Click the button below to deploy the resources to your Azure subscription. This will deploy the ARM template generated from the Bicep files in your forked repository.
+### 2. Upload sample input files
 
-    [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FTheDataDojo%2Fadf-lab-in-a-box%2Fmain%2Finfra%2Fmain.json)
+After deployment, navigate to the storage account → **Containers** → `inputs` and upload the files from the `/samples` folder of this repo:
 
+| File | Format |
+|---|---|
+| `people_array.json` | JSON array of person objects |
+| `people.jsonl` | JSON Lines — one object per line |
 
-    **How the Fork-Safe Button Works:**
+You can also use the helper script:
 
-    The "Deploy to Azure" button uses a special URL that dynamically resolves to the `main.json` ARM template within your forked repository. The `{{github.repository}}` placeholder is a feature of GitHub that automatically inserts the `owner/repository-name` of the repository where the README is being viewed. This makes the button work seamlessly from any fork without modification.
+```bash
+# Requires Azure CLI logged in
+./scripts/upload-samples.sh <storageAccountName>
+```
 
-    **Important:** For the button to work correctly from a fork, you must replace `TheDataDojo/adf-lab-in-a-box` in the URL with your own GitHub username and repository name.
+### 3. Run the pipeline
 
-### Lab Instructions
+Open **Azure Data Factory Studio** → **Author** → `ProcessPersonRecords` → **Debug**.
 
-1.  **Verify Resources:** Once the deployment is complete, navigate to the resource group you created in the Azure portal. You should see the following resources:
-    *   Azure Data Factory
-    *   Azure Storage Account (ADLS Gen2)
+| Parameter | Description | Example |
+|---|---|---|
+| `inputFileName` | File name in the `inputs` container | `people_array.json` |
+| `inputFileFormat` | `json` for array, `jsonl` for JSON Lines | `json` |
+| `apiUrl` | Target API endpoint | `https://httpbin.org/post` |
 
-2.  **Upload Sample Input Files:**
-    *   Navigate to the storage account, then go to **Containers**.
-    *   You will see two containers: `inputs` and `audit`.
-    *   Click on the `inputs` container.
-    *   Upload the sample files from the `/samples` directory of this repository:
-        *   `people_array.json`
-        *   `people.jsonl`
+### 4. Verify API calls
 
-3.  **Trigger Pipeline Run:**
-    *   Navigate to the Azure Data Factory in the Azure portal and click **Launch Studio**.
-    *   Go to the **Author** tab (pencil icon) and you will see the `ProcessPersonRecords` pipeline.
-    *   Click **Debug** to trigger a new pipeline run.
-    *   You will be prompted for the following parameters:
-        *   `inputFileName`: The name of the input file in the `inputs` container (e.g., `people_array.json` or `people.jsonl`).
-        *   `inputFileFormat`: The format of the input file. Use `json` for `people_array.json` and `jsonl` for `people.jsonl`.
+The default endpoint is `https://httpbin.org/post`, which echoes the request body in its response. In the ADF **Monitor** view, click into the `PostToApi` activity output to see the echoed payload from httpbin.
 
-4.  **Verify API Calls:**
-    *   The pipeline sends POST requests to `https://httpbin.org/post`. This is a public test service that echoes the request body in the response.
-    *   In the ADF monitoring view, you can inspect the output of the `PostToApi` activity to see the response from `httpbin.org`.
+### 5. Verify the audit file
 
-5.  **Verify Audit File:**
-    *   Navigate back to the storage account and go to the `audit` container.
-    *   You will see a new folder named with the pipeline run ID.
-    *   Inside this folder, you will find the `audit.jsonl` file.
-    *   Download and open the file. You will see a JSON object on each line, representing the audit record for each person processed by the pipeline.
+Navigate to the storage account → **Containers** → `audit` → `<pipelineRunId>/audit.jsonl`.
+
+Each line is a valid JSON object:
+
+```json
+{
+  "fullPayload": { "personId": "1", "name": "John Doe", "age": 30 },
+  "timestamp": "2024-01-15T10:30:00Z",
+  "pipelineRunId": "abc123...",
+  "activityRunId": "def456...",
+  "httpStatusCode": 200,
+  "operation": "Unknown"
+}
+```
+
+> **Note on `operation` field:** The default API (`httpbin.org`) does not return a semantic operation indicator. The field is set to `Unknown` and the HTTP status code is logged for correlation. If your target API returns a meaningful operation in its response body, update the `AppendToAuditFile` activity expression accordingly.
+
+---
+
+## Audit Design Notes
+
+The pipeline uses `isSequential: true` on the `ForEach` activity to enforce **sequential** append writes to the single audit blob per run. This prevents concurrent append corruption on the Append Blob. The tradeoff is throughput — records are processed one at a time. For high-volume scenarios, consider writing per-record audit files and merging downstream.
+
+---
+
+## Repository Structure
+
+```
+.
+├── adf/
+│   ├── factory.json                  # ARM template for all ADF artifacts (linked services, datasets, pipeline)
+│   └── pipelines/
+│       └── ProcessPersonRecords.json # Standalone pipeline definition for reference
+├── infra/
+│   ├── main.bicep                    # Bicep source — Storage + ADF + RBAC + nested ADF artifact deployment
+│   ├── main.json                     # Compiled ARM template — used by the Deploy to Azure button
+│   └── main.parameters.json         # Default parameter values
+├── samples/
+│   ├── people_array.json             # Sample input: JSON array format
+│   └── people.jsonl                  # Sample input: JSON Lines format
+└── scripts/
+    └── upload-samples.sh             # Helper: uploads sample files to the inputs container
+```
+
+---
 
 ## Troubleshooting
 
-*   **BadRequest, Null, or Missing Body Errors in ADF:** These errors often occur when the `WebActivity` in ADF is not configured to send the body as a string. Ensure that the `body` property of the `WebActivity` is properly stringified using `@json()`.
-*   **Storage Permission/ACL Issues:** If the ADF pipeline fails with authentication errors when accessing the storage account, verify that the ADF's managed identity has the **Storage Blob Data Contributor** role assigned on the storage account.
-*   **Blob vs. DFS Endpoint:** This lab uses the DFS (Distributed File System) endpoint for ADLS Gen2, which is required for the `Append Blob` operation. If you are using the Blob endpoint, you may encounter errors.
-
-## Included Files
-
-*   **`/infra`:** Contains the Bicep files for deploying the Azure resources.
-*   **`/adf`:** Contains the JSON definitions for the ADF pipeline, datasets, and linked services.
-*   **`/samples`:** Contains sample input files in both JSON array and JSONL formats.
-*   **`/.github/workflows`:** Contains a GitHub Actions workflow for linting the Bicep and JSON files in the repository.
-*   **`/scripts`:** Contains a shell script to upload the sample files to the storage account.
+| Symptom | Likely Cause | Fix |
+|---|---|---|
+| `BadRequest` or null body on `PostToApi` | Body not serialized as string | Ensure `@json(item())` is used in the Web Activity body |
+| `AuthorizationPermissionMismatch` on audit write | ADF managed identity missing RBAC | Verify **Storage Blob Data Contributor** is assigned to the ADF identity on the storage account |
+| `BlobAccessTierNotSupported` or 404 on append | Wrong endpoint type | Use the **DFS** endpoint (`dfs.core.windows.net`), not the Blob endpoint, for ADLS Gen2 append operations |
+| Activity output reference error | Referencing output of a non-ancestor activity | In ADF, `activity('X').output` is only valid inside the same `ForEach` scope where `X` ran |
