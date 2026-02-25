@@ -1,0 +1,227 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2018-05-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "factoryName": {
+            "type": "string"
+        },
+        "storageUri": {
+            "type": "string"
+        },
+        "apiUrl": {
+            "type": "string"
+        }
+    },
+    "resources": [
+        {
+            "type": "Microsoft.DataFactory/factories/linkedservices",
+            "name": "[concat(parameters('factoryName'), '/AzureDataLakeStorage')]",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "type": "AzureBlobFS",
+                "typeProperties": {
+                    "url": "@{",
+                    "accountKey": null,
+                    "servicePrincipalId": null,
+                    "servicePrincipalKey": null,
+                    "tenant": null,
+                    "managedIdentityCredential": {
+                        "referenceName": "default",
+                        "type": "ManagedIdentity"
+                    }
+                }
+            }
+        },
+        {
+            "type": "Microsoft.DataFactory/factories/linkedservices",
+            "name": "[concat(parameters('factoryName'), '/HttpServer')]",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "type": "HttpServer",
+                "typeProperties": {
+                    "url": "@{parameters(\'apiUrl\')}",
+                    "enableServerCertificateValidation": true,
+                    "authenticationType": "Anonymous"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "name": "[concat(parameters('factoryName'), '/InputDataset')]",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "AzureDataLakeStorage",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "containerName": {
+                        "type": "string",
+                        "defaultValue": "inputs"
+                    },
+                    "fileName": {
+                        "type": "string"
+                    }
+                },
+                "annotations": [],
+                "type": "Json",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobFSLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "fileSystem": {
+                            "value": "@dataset().containerName",
+                            "type": "Expression"
+                        }
+                    }
+                },
+                "schema": {}
+            }
+        },
+        {
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "name": "[concat(parameters('factoryName'), '/ProcessPersonRecords')]",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "LookupInputFile",
+                        "type": "Lookup",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "JsonSource",
+                                "storeSettings": {
+                                    "type": "AzureBlobFSReadSettings",
+                                    "recursive": true
+                                }
+                            },
+                            "dataset": {
+                                "referenceName": "InputDataset",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "fileName": "@pipeline().parameters.inputFileName"
+                                }
+                            },
+                            "firstRowOnly": false
+                        }
+                    },
+                    {
+                        "name": "ForEachRecord",
+                        "type": "ForEach",
+                        "dependsOn": [
+                            {
+                                "activity": "LookupInputFile",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@if(equals(pipeline().parameters.inputFileFormat, 'json'), activity('LookupInputFile').output.value, split(activity('LookupInputFile').output.value, '\n'))",
+                                "type": "Expression"
+                            },
+                            "isSequential": true,
+                            "activities": [
+                                {
+                                    "name": "PostToApi",
+                                    "type": "WebActivity",
+                                    "dependsOn": [],
+                                    "policy": {
+                                        "timeout": "0.00:10:00",
+                                        "retry": 0,
+                                        "retryIntervalInSeconds": 30,
+                                        "secureOutput": false,
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "url": {
+                                            "value": "@pipeline().parameters.apiUrl",
+                                            "type": "Expression"
+                                        },
+                                        "method": "POST",
+                                        "body": {
+                                            "value": "@json(item())",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                },
+                                {
+                                    "name": "AppendToAuditFile",
+                                    "type": "WebActivity",
+                                    "dependsOn": [
+                                        {
+                                            "activity": "PostToApi",
+                                            "dependencyConditions": [
+                                                "Succeeded"
+                                            ]
+                                        }
+                                    ],
+                                    "policy": {
+                                        "timeout": "0.00:10:00",
+                                        "retry": 0,
+                                        "retryIntervalInSeconds": 30,
+                                        "secureOutput": false,
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "url": {
+                                            "value": "@{concat(parameters('storageUri'), 'audit/', pipeline().RunId, '/audit.jsonl?comp=appendblock&position=0')}",
+                                            "type": "Expression"
+                                        },
+                                        "method": "PATCH",
+                                        "body": {
+                                            "value": "@{json(string(createObject('fullPayload', item(), 'timestamp', utcNow(), 'pipelineRunId', pipeline().RunId, 'activityRunId', activity('PostToApi').activityRunId, 'httpStatusCode', activity('PostToApi').output.statusCode, 'operation', 'Unknown')))}",
+                                            "type": "Expression"
+                                        },
+                                        "headers": [
+                                            {
+                                                "name": "x-ms-version",
+                                                "value": "2021-06-08"
+                                            }
+                                        ],
+                                        "authentication": {
+                                            "type": "MSI",
+                                            "resource": "https://storage.azure.com/"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "parameters": {
+                    "inputFileName": {
+                        "type": "string"
+                    },
+                    "inputFileFormat": {
+                        "type": "string",
+                        "defaultValue": "json"
+                    },
+                    "apiUrl": {
+                        "type": "string",
+                        "defaultValue": "@{parameters(\'apiUrl\')}"
+                    }
+                },
+                "annotations": []
+            }
+        }
+    ]
+}
