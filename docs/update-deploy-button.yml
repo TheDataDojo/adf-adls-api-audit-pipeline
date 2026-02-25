@@ -1,0 +1,31 @@
+name: Update Deploy to Azure Button
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Rewrite Deploy to Azure button URL
+        run: |
+          ENCODED_REPO=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${{ github.repository }}', safe=''))")
+          sed -i "s|REPO_PLACEHOLDER|${{ github.repository }}|g" README.md
+
+      - name: Commit if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git diff --quiet README.md || (git add README.md && git commit -m "chore: update Deploy to Azure button for ${{ github.repository }}" && git push)
