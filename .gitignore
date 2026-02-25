@@ -1,3 +1,6 @@
 .cache
 
 .nvm
+
+.browser_data_dir
+terminal_full_output
