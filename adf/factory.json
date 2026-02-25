@@ -76,7 +76,7 @@
                 "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'), '/datasets/InputDataset')]"
             ],
             "properties": {
-                "description": "Reads person records from ADLS Gen2, POSTs each record to a target API, and appends a JSONL audit line capturing the CRUD operation, HTTP status, and run correlation IDs.",
+                "description": "Reads person records from ADLS Gen2, POSTs each record to a target API, and appends a JSONL audit line capturing the CRUD operation from the API response, HTTP status, and run correlation IDs.",
                 "activities": [
                     {
                         "name": "LookupInputFile",
@@ -131,7 +131,7 @@
                             "activities": [
                                 {
                                     "name": "PostToApi",
-                                    "description": "POST the person record to the target API. The record must include an 'operation' field (Create/Update/Delete) which is passed through to the API and captured in the audit log.",
+                                    "description": "POST the person record to the target API.",
                                     "type": "WebActivity",
                                     "dependsOn": [],
                                     "policy": {
@@ -159,7 +159,7 @@
                                 },
                                 {
                                     "name": "AppendToAuditFile",
-                                    "description": "Append one JSONL audit line to the single audit file for this run. The 'operation' field is read directly from the input record (item().operation). If the field is absent, it falls back to 'Unknown'. The audit file path is: audit/<pipelineRunId>/audit.jsonl",
+                                    "description": "Append one JSONL audit line to the single audit file for this run. The 'operation' field is read from the API response body (activity('PostToApi').output.json.action). If the field is absent, it falls back to 'Unknown'. Runs on both Succeeded and Failed outcomes of PostToApi so every record is always audited. Audit file path: audit/<pipelineRunId>/audit.jsonl",
                                     "type": "WebActivity",
                                     "dependsOn": [
                                         {
@@ -190,7 +190,7 @@
                                             "Content-Type": "application/octet-stream"
                                         },
                                         "body": {
-                                            "value": "@concat(string(createObject('personId', item().personId, 'operation', if(contains(item(), 'operation'), item().operation, 'Unknown'), 'httpStatusCode', activity('PostToApi').output.statusCode, 'apiResponseSnippet', substring(string(activity('PostToApi').output), 0, min(200, length(string(activity('PostToApi').output)))), 'timestamp', utcNow(), 'pipelineRunId', pipeline().RunId, 'activityRunId', activity('PostToApi').ActivityRunId)), '\n')",
+                                            "value": "@concat(string(createObject('personId', item().personId, 'operation', if(and(contains(activity('PostToApi').output, 'json'), contains(activity('PostToApi').output.json, 'action')), activity('PostToApi').output.json.action, 'Unknown'), 'httpStatusCode', activity('PostToApi').output.statusCode, 'apiResponseSnippet', substring(string(activity('PostToApi').output), 0, min(200, length(string(activity('PostToApi').output)))), 'timestamp', utcNow(), 'pipelineRunId', pipeline().RunId, 'activityRunId', activity('PostToApi').ActivityRunId)), '\n')",
                                             "type": "Expression"
                                         },
                                         "authentication": {

@@ -75,16 +75,16 @@ Each line is a valid JSON object:
 ```json
 {
   "personId": "1",
-  "operation": "Create",
+  "operation": "Unknown",
   "httpStatusCode": 200,
-  "apiResponseSnippet": "{\"args\":{},\"data\":\"{\\\"personId\\\":\\\"1\\\",\\\"name\\\":\\\"John Doe\\\",\\\"age\\\":30,\\\"operation\\\":\\\"Create\\\"}\",\"files\":{},\"form\":{},\"headers\":{\"Accept\":\"*/*\",\"Content-Length\":\"68\",\"Content-Type\":\"application/json\",\"Host\":\"httpbin.org\",\"X-Amzn-Trace-Id\":\"Root=1-664f6e3c-1234567890abcdef12345678\"},\"json\":{\"age\":30,\"name\":\"John Doe\",\"operation\":\"Create\",\"personId\":\"1\"},\"origin\":\"52.202.10.1\",\"url\":\"https://httpbin.org/post\"}",
+  "apiResponseSnippet": "{\"args\":{},\"data\":\"{\\\"personId\\\":\\\"1\\\",\\\"name\\\":\\\"John Doe\\\",\\\"age\\\":30}\",\"files\":{},\"form\":{},\"headers\":{\"Accept\":\"*/*\",\"Content-Length\":\"68\",\"Content-Type\":\"application/json\",\"Host\":\"httpbin.org\",\"X-Amzn-Trace-Id\":\"Root=1-664f6e3c-1234567890abcdef12345678\"},\"json\":{\"age\":30,\"name\":\"John Doe\",\"personId\":\"1\"},\"origin\":\"52.202.10.1\",\"url\":\"https://httpbin.org/post\"}",
   "timestamp": "2024-01-15T10:30:00Z",
   "pipelineRunId": "abc123...",
   "activityRunId": "def456..."
 }
 ```
 
-> **Note on `operation` field:** The `operation` field is now read directly from the input record. If the field is missing from a record, it will be stamped as `Unknown` in the audit log.
+> **Note on `operation` field:** The `operation` field is now read from the API response body (`activity(\'PostToApi\').output.json.action`). If the field is missing from the response, it will be stamped as `Unknown` in the audit log. The default API (`httpbin.org`) does not return this field, so all operations will be logged as `Unknown`.
 
 ---
 
