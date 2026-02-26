@@ -19,9 +19,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Rewrite Deploy to Azure button URL
+        env:
+          GH_REPO: ${{ github.repository }}
         run: |
-          # URL-encode the slash in org/repo so the Azure portal receives a valid URI
-          ENCODED_REPO=$(echo "${{ github.repository }}" | sed 's|/|%2F|g' )
+          ENCODED_REPO=$(echo "$GH_REPO" | sed 's|/|%2F|g' )
           sed -i "s|REPO_PLACEHOLDER|${ENCODED_REPO}|g" README.md
 
       - name: Commit if changed
