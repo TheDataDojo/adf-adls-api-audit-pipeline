@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Deploying to Azure...</title>
+</head>
+<body>
+  <p>Redirecting to Azure portal...</p>
+  <script>
+    // Derive org and repo from the current GitHub Pages URL at runtime.
+    // GitHub Pages URLs follow the pattern: https://<org>.github.io/<repo>/...
+    var host = window.location.hostname;          // e.g. thedatadojo.github.io
+    var path = window.location.pathname;          // e.g. /adf-adls-api-audit-pipeline/deploy/
+    var org  = host.split(".")[0];                // thedatadojo
+    var repo = path.split("/")[1];                // adf-adls-api-audit-pipeline
+
+    var rawBase = "https://raw.githubusercontent.com/" + org + "/" + repo + "/main/infra/main.json";
+    var encoded = encodeURIComponent(rawBase);
+    var portalUrl = "https://portal.azure.com/#create/Microsoft.Template/uri/" + encoded;
+
+    window.location.replace(portalUrl);
+  </script>
+</body>
+</html>
