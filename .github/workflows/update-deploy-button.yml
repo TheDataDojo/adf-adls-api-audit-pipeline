@@ -3,7 +3,6 @@ name: Update Deploy to Azure Button
 on:
   push:
     branches:
-      - master
       - main
   workflow_dispatch:
 
@@ -21,10 +20,12 @@ jobs:
 
       - name: Rewrite Deploy to Azure button URL
         run: |
-          sed -i "s|REPO_PLACEHOLDER|${{ github.repository }}|g" README.md
+          # URL-encode the slash in org/repo so the Azure portal receives a valid URI
+          ENCODED_REPO=$(echo "${{ github.repository }}" | sed 's|/|%2F|g' )
+          sed -i "s|REPO_PLACEHOLDER|${ENCODED_REPO}|g" README.md
 
       - name: Commit if changed
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git diff --quiet README.md || (git add README.md && git commit -m "chore: update Deploy to Azure button for ${{ github.repository }}" && git push )
+          git diff --quiet README.md || (git add README.md && git commit -m "chore: update Deploy to Azure button for ${{ github.repository }}" && git push)
