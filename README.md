@@ -2,7 +2,7 @@
 
 An end-to-end Azure Data Factory lab that reads records from ADLS Gen2, POSTs each record to a public API endpoint, captures the exact request payload for each call, and writes a consolidated JSON log of all sent requests back to ADLS Gen2 - all deployed in one click.
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FTheDataDojo%2Fadf-adls-api-audit-pipeline%2Fmain%2Finfra%2Fmain.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FREPO_PLACEHOLDER%2Fmain%2Finfra%2Fmain.json)
 
 ---
 
