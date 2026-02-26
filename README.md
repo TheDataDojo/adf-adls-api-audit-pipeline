@@ -1,6 +1,6 @@
-# ADF API Request Logging Pipeline — Lab in a Box
+# ADF API Request Logging Pipeline - Lab in a Box
 
-An end-to-end Azure Data Factory lab that reads records from ADLS Gen2, POSTs each record to a public API endpoint, captures the exact request payload for each call, and writes a consolidated JSON log of all sent requests back to ADLS Gen2 — all deployed in one click.
+An end-to-end Azure Data Factory lab that reads records from ADLS Gen2, POSTs each record to a public API endpoint, captures the exact request payload for each call, and writes a consolidated JSON log of all sent requests back to ADLS Gen2 - all deployed in one click.
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FTheDataDojo/adf-adls-api-audit-pipeline%2Fmaster%2Finfra%2Fmain.json)
 
